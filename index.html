@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Xác minh danh tính Blockchain</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .block {
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+        }
+        .block strong {
+            display: block;
+            margin-top: 4px;
+        }
+        #preview {
+            display: none;
+            margin-top: 10px;
+        }
+        #controls {
+            margin-top: 10px;
+        }
+        #check-result .block {
+            margin-top: 10px;
+            background-color: #e6ffe6;
+            border: 1px solid #b3ffcc;
+            padding: 10px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Xác minh danh tính Blockchain</h1>
+
+    <form id="identity-form">
+        <input type="text" id="name" placeholder="Full Name" required />
+        <input type="email" id="email" placeholder="Email" required />
+        <button type="submit">Submit Identity</button>
+    </form>
+
+    <h3>📸 Khuôn mặt</h3>
+    <video id="video" width="320" height="240" autoplay muted></video><br />
+    <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+
+    <div id="controls">
+        <button id="capture" type="button">📷 Chụp ảnh</button>
+        <button id="retake" type="button" style="display:none;">🔁 Chụp lại</button>
+        <button id="accept" type="button" style="display:none;">✅ Chấp nhận</button>
+    </div>
+
+    <img id="preview" width="320" />
+    <p><i>Ảnh khuôn mặt sẽ được lưu vào blockchain khi bạn nhấn "Chấp nhận".</i></p>
+
+    <h3>🔍 Kiểm tra danh tính</h3>
+    <input type="email" id="check-email" placeholder="Nhập email cần kiểm tra" />
+    <button onclick="checkIdentity()">Kiểm tra</button>
+    <p id="check-result"></p>
+
+    <h2>🔗 Blockchain Chain</h2>
+    <div id="chain-output"></div>
+
+    <script>
+        const form = document.getElementById('identity-form');
+        const output = document.getElementById('chain-output');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const preview = document.getElementById('preview');
+        const captureBtn = document.getElementById('capture');
+        const retakeBtn = document.getElementById('retake');
+        const acceptBtn = document.getElementById('accept');
+        let faceImageBase64 = null;
+        let currentChain = [];
+
+        // Bật webcam
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then((stream) => {
+                video.srcObject = stream;
+            })
+            .catch((err) => {
+                alert("❌ Không thể truy cập webcam: " + err.message);
+            });
+
+        // Chụp ảnh
+        captureBtn.addEventListener('click', () => {
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/png');
+
+            preview.src = imageData;
+            preview.style.display = 'block';
+            captureBtn.style.display = 'none';
+            retakeBtn.style.display = 'inline-block';
+            acceptBtn.style.display = 'inline-block';
+
+            faceImageBase64 = null;
+        });
+
+        // Chụp lại
+        retakeBtn.addEventListener('click', () => {
+            preview.src = '';
+            preview.style.display = 'none';
+            captureBtn.style.display = 'inline-block';
+            retakeBtn.style.display = 'none';
+            acceptBtn.style.display = 'none';
+            faceImageBase64 = null;
+        });
+
+        // Chấp nhận ảnh
+        acceptBtn.addEventListener('click', () => {
+            faceImageBase64 = preview.src;
+            alert("✅ Ảnh đã được chấp nhận.");
+        });
+
+        // Gửi dữ liệu lên blockchain và kiểm tra trùng lặp
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim().toLowerCase();
+
+            if (!faceImageBase64) {
+                alert("❌ Bạn chưa chụp hoặc chấp nhận ảnh khuôn mặt!");
+                return;
+            }
+
+            // Kiểm tra email trùng lặp
+            const isDuplicate = currentChain.some(
+                block => block.data.email && block.data.email.toLowerCase() === email
+            );
+
+            if (isDuplicate) {
+                alert("⚠️ Danh tính với email này đã tồn tại trong blockchain!");
+                return;
+            }
+
+            try {
+                const res = await fetch('http://localhost:3000/add-identity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, faceImage: faceImageBase64 }),
+                });
+
+                if (!res.ok) throw new Error("Lỗi gửi dữ liệu lên server!");
+
+                alert('✅ Danh tính đã được gửi vào blockchain!');
+
+                form.reset();
+                faceImageBase64 = null;
+                preview.src = '';
+                preview.style.display = 'none';
+                captureBtn.style.display = 'inline-block';
+                retakeBtn.style.display = 'none';
+                acceptBtn.style.display = 'none';
+
+                await loadChain();
+            } catch (error) {
+                alert('❌ Lỗi: ' + error.message);
+            }
+        });
+
+        // Load lại chuỗi blockchain
+        async function loadChain() {
+            const res = await fetch('http://localhost:3000/identities');
+            const chain = await res.json();
+            currentChain = chain;
+            output.innerHTML = '';
+
+            chain.forEach((block) => {
+                const div = document.createElement('div');
+                div.className = 'block';
+                div.innerHTML = `
+                    <strong>🧾 Block #${block.index}</strong>
+                    <strong>⏱ Timestamp:</strong> ${block.timestamp}
+                    ${block.data.name ? `<strong>👤 Name:</strong> ${block.data.name}` : ''}
+                    ${block.data.email ? `<strong>📧 Email:</strong> ${block.data.email}` : ''}
+                    ${block.data.faceImage ? `<strong>🖼 Khuôn mặt:</strong><br><img src="${block.data.faceImage}" width="160"/>` : ''}
+                    <strong>🔗 Hash:</strong> <code>${block.hash}</code>
+                    <strong>🔗 Previous Hash:</strong> <code>${block.previousHash}</code>
+                `;
+                output.appendChild(div);
+            });
+        }
+
+        // Kiểm tra danh tính bằng email
+        function checkIdentity() {
+            const email = document.getElementById('check-email').value.trim().toLowerCase();
+            const result = document.getElementById('check-result');
+            result.innerHTML = '';
+
+            const found = currentChain.find(
+                (block) =>
+                    block.data.email &&
+                    block.data.email.toLowerCase() === email
+            );
+
+            if (found) {
+                result.style.color = 'green';
+                result.innerHTML = `
+                    <p>✅ Danh tính đã tồn tại trong blockchain!</p>
+                    <div class="block">
+                        <strong>👤 Name:</strong> ${found.data.name} <br>
+                        <strong>📧 Email:</strong> ${found.data.email} <br>
+                        <strong>🖼 Khuôn mặt:</strong><br>
+                        <img src="${found.data.faceImage}" width="160" />
+                    </div>
+                `;
+            } else {
+                result.style.color = 'red';
+                result.textContent = '❌ Không tìm thấy danh tính này!';
+            }
+        }
+
+        // Gọi khi trang load
+        loadChain();
+    </script>
+</body>
+</html>
